@@ -302,7 +302,66 @@ export const reasignarBarrioVacunador = async (req, res) => {
     }
 }
 
-// ── DESACTIVAR USUARIO ────────────────────────────────────────────────────────
+// ── ACTUALIZAR BARRIOS DE UN COORDINADOR DE BRIGADA (solo coordinador_campana) ─
+export const actualizarBarriosCoordinador = async (req, res) => {
+    try {
+        const { id } = req.params
+        const { barriosIds } = req.body
+
+        if (!Array.isArray(barriosIds)) {
+            return res.status(400).json({ msg: 'barriosIds debe ser un array' })
+        }
+
+        const usuario = await Usuario.findById(id)
+        if (!usuario) {
+            return res.status(404).json({ msg: 'Usuario no encontrado' })
+        }
+
+        if (usuario.rol !== 'coordinador_brigada') {
+            return res.status(400).json({ msg: 'Solo se pueden editar barrios de un coordinador de brigada' })
+        }
+
+        // Limpiar coordinadorAsignado en barrios que se quitan
+        const barriosAnteriores = usuario.barriosAsignados.map(b => b.toString())
+        const barriosNuevos     = barriosIds.map(b => b.toString())
+        const barriosQuitados   = barriosAnteriores.filter(b => !barriosNuevos.includes(b))
+        const barriosAgregados  = barriosNuevos.filter(b => !barriosAnteriores.includes(b))
+
+        if (barriosQuitados.length > 0) {
+            await Barrio.updateMany(
+                { _id: { $in: barriosQuitados }, coordinadorAsignado: id },
+                { $set: { coordinadorAsignado: null } }
+            )
+        }
+
+        if (barriosAgregados.length > 0) {
+            await Barrio.updateMany(
+                { _id: { $in: barriosAgregados } },
+                { $set: { coordinadorAsignado: id } }
+            )
+        }
+
+        usuario.barriosAsignados = barriosIds
+        await usuario.save()
+
+        const actualizado = await Usuario.findById(id)
+            .select('-password')
+            .populate('barriosAsignados', 'nombre sector')
+            .lean()
+
+        res.status(200).json({
+            success: true,
+            msg: 'Barrios actualizados correctamente',
+            data: actualizado,
+        })
+
+    } catch (error) {
+        console.error('❌ Error al actualizar barrios:', error.message)
+        res.status(500).json({ success: false, msg: 'Error interno del servidor', error: error.message })
+    }
+}
+
+
 export const desactivarUsuario = async (req, res) => {
     try {
         const { id } = req.params
