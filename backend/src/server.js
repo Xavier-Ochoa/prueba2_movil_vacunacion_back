@@ -21,7 +21,7 @@ app.use(cors({
 
 // ── Ruta raíz ─────────────────────────────────
 app.get('/', (req, res) => {
-    res.json({ msg: 'API Sistema de Vacunación - Sprint 2 ✅', version: '2.0.0' })
+    res.json({ msg: 'API Sistema de Vacunación' })
 })
 
 // ── Rutas ─────────────────────────────────────
