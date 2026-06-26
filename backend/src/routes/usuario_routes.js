@@ -5,6 +5,7 @@ import {
     listarMisUsuarios,
     obtenerUsuario,
     editarUsuario,
+    actualizarBarriosCoordinador,
     reasignarBarrioVacunador,
     desactivarUsuario,
 } from '../controllers/usuario_controller.js'
@@ -21,16 +22,17 @@ const router = Router()
 router.use(verificarTokenJWT, verificarPasswordCambiada)
 
 // ── Solo Coordinador de Campaña ────────────────────────────────────────────────
-router.post('/coordinador-brigada',     verificarCoordinadorCampana,  crearCoordinadorBrigada)
+router.post('/coordinador-brigada',         verificarCoordinadorCampana, crearCoordinadorBrigada)
+router.put('/:id/barrios',                  verificarCoordinadorCampana, actualizarBarriosCoordinador)
 
 // ── Solo Coordinador de Brigada ────────────────────────────────────────────────
-router.post('/vacunador',               verificarCoordinadorBrigada,   crearVacunador)
-router.put('/:id/reasignar-barrio',     verificarCoordinadorBrigada,   reasignarBarrioVacunador)
+router.post('/vacunador',                   verificarCoordinadorBrigada, crearVacunador)
+router.put('/:id/reasignar-barrio',         verificarCoordinadorBrigada, reasignarBarrioVacunador)
 
 // ── Coordinadores (cualquiera) ─────────────────────────────────────────────────
-router.get('/mis-usuarios',             listarMisUsuarios)
-router.get('/:id',                      obtenerUsuario)
-router.put('/:id',                      editarUsuario)
-router.patch('/:id/desactivar',         desactivarUsuario)
+router.get('/mis-usuarios',                 listarMisUsuarios)
+router.get('/:id',                          obtenerUsuario)
+router.put('/:id',                          editarUsuario)
+router.patch('/:id/desactivar',             desactivarUsuario)
 
 export default router
