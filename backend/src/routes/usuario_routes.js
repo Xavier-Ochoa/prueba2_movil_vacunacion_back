@@ -8,6 +8,7 @@ import {
     actualizarBarriosCoordinador,
     reasignarBarrioVacunador,
     desactivarUsuario,
+    activarUsuario,
 } from '../controllers/usuario_controller.js'
 import {
     verificarTokenJWT,
@@ -34,5 +35,6 @@ router.get('/mis-usuarios',                 listarMisUsuarios)
 router.get('/:id',                          obtenerUsuario)
 router.put('/:id',                          editarUsuario)
 router.patch('/:id/desactivar',             desactivarUsuario)
+router.patch('/:id/activar',                activarUsuario)
 
 export default router
