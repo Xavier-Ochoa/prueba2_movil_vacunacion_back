@@ -1,5 +1,4 @@
 import { v2 as cloudinary } from 'cloudinary'
-import { CloudinaryStorage } from 'multer-storage-cloudinary'
 import multer from 'multer'
 
 // Configurar Cloudinary con variables de entorno
@@ -9,19 +8,9 @@ cloudinary.config({
     api_secret: process.env.CLOUDINARY_API_SECRET,
 })
 
-// Storage para multer → sube directo a Cloudinary
-const storage = new CloudinaryStorage({
-    cloudinary,
-    params: {
-        folder:         'vacunacion-mascotas',
-        allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
-        transformation: [{ width: 800, height: 800, crop: 'limit', quality: 'auto' }],
-    },
-})
-
-// Middleware multer con límite de 5MB
+// multer guarda el archivo en memoria (Buffer) — sin dependencia de multer-storage-cloudinary
 export const uploadImagen = multer({
-    storage,
+    storage: multer.memoryStorage(),
     limits: { fileSize: 5 * 1024 * 1024 },
     fileFilter: (req, file, cb) => {
         const tiposPermitidos = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp']
@@ -32,6 +21,31 @@ export const uploadImagen = multer({
         }
     },
 })
+
+/**
+ * Sube el buffer de req.file a Cloudinary y devuelve { secure_url, public_id }.
+ * Llámalo en el controlador después de uploadImagen.single('imagen').
+ *
+ * Ejemplo:
+ *   const { secure_url, public_id } = await subirImagenBuffer(req.file.buffer)
+ */
+export const subirImagenBuffer = (buffer, opciones = {}) => {
+    return new Promise((resolve, reject) => {
+        const defaults = {
+            folder:         'vacunacion-mascotas',
+            transformation: [{ width: 800, height: 800, crop: 'limit', quality: 'auto' }],
+            allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
+        }
+        const stream = cloudinary.uploader.upload_stream(
+            { ...defaults, ...opciones },
+            (error, result) => {
+                if (error) return reject(error)
+                resolve({ secure_url: result.secure_url, public_id: result.public_id })
+            }
+        )
+        stream.end(buffer)
+    })
+}
 
 // Eliminar imagen de Cloudinary por su publicId
 export const eliminarImagenCloudinary = async (publicId) => {
