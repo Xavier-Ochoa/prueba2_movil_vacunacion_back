@@ -2,10 +2,24 @@ import Vacunacion from '../models/Vacunacion.js'
 import Usuario from '../models/Usuario.js'
 import { eliminarImagenCloudinary, subirImagenBuffer } from '../config/cloudinary.js'
 
-// ── HELPER: solo el vacunador que creó el registro puede editarlo/eliminarlo ──
-const esCreadorVacunacion = (usuarioBDD, vacunacion) => {
-    if (usuarioBDD.rol !== 'vacunador') return false
-    return vacunacion.vacunador.toString() === usuarioBDD._id.toString()
+// ── HELPER: permiso para editar/eliminar un registro de vacunación ───────────
+// - El vacunador que creó el registro siempre puede editarlo/eliminarlo.
+// - El coordinador_brigada que CREÓ a ese vacunador también puede
+//   editar/corregir sus registros (no eliminar, salvo que se indique).
+const puedeModificarVacunacion = async (usuarioBDD, vacunacion) => {
+    // Caso 1: el propio vacunador, dueño del registro
+    if (usuarioBDD.rol === 'vacunador') {
+        return vacunacion.vacunador.toString() === usuarioBDD._id.toString()
+    }
+
+    // Caso 2: coordinador_brigada que creó al vacunador dueño del registro
+    if (usuarioBDD.rol === 'coordinador_brigada') {
+        const vacunador = await Usuario.findById(vacunacion.vacunador).select('creadoPor')
+        if (!vacunador || !vacunador.creadoPor) return false
+        return vacunador.creadoPor.toString() === usuarioBDD._id.toString()
+    }
+
+    return false
 }
 
 // ── HELPER: obtener IDs de todos los vacunadores bajo un coordinador_campana ──
@@ -199,7 +213,7 @@ export const obtenerVacunacion = async (req, res) => {
     }
 }
 
-// ── EDITAR VACUNACIÓN (solo el vacunador que la creó) ─────────────────────────
+// ── EDITAR VACUNACIÓN (vacunador dueño, o su coordinador de brigada) ─────────
 export const editarVacunacion = async (req, res) => {
     try {
         const { id } = req.params
@@ -209,8 +223,8 @@ export const editarVacunacion = async (req, res) => {
             return res.status(404).json({ msg: 'Vacunación no encontrada' })
         }
 
-        if (!esCreadorVacunacion(req.usuarioBDD, vacunacion)) {
-            return res.status(403).json({ msg: 'Solo el vacunador que registró esta vacunación puede editarla.' })
+        if (!(await puedeModificarVacunacion(req.usuarioBDD, vacunacion))) {
+            return res.status(403).json({ msg: 'No tienes permiso para editar esta vacunación.' })
         }
 
         const {
@@ -262,7 +276,11 @@ export const eliminarVacunacion = async (req, res) => {
             return res.status(200).json({ success: true, msg: 'La vacunación ya había sido eliminada', yaEliminado: true })
         }
 
-        if (!esCreadorVacunacion(req.usuarioBDD, vacunacion)) {
+        const esVacunadorDueno =
+            req.usuarioBDD.rol === 'vacunador' &&
+            vacunacion.vacunador.toString() === req.usuarioBDD._id.toString()
+
+        if (!esVacunadorDueno) {
             return res.status(403).json({ msg: 'Solo el vacunador que registró esta vacunación puede eliminarla.' })
         }
 
