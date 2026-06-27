@@ -423,3 +423,47 @@ export const desactivarUsuario = async (req, res) => {
         res.status(500).json({ success: false, msg: 'Error interno del servidor', error: error.message })
     }
 }
+
+
+// ── ACTIVAR USUARIO (solo el creador) ─────────────────────────────────────────
+export const activarUsuario = async (req, res) => {
+    try {
+        const { id } = req.params
+
+        const usuario = await Usuario.findById(id).select('+estado')
+        if (!usuario) {
+            return res.status(404).json({ msg: 'Usuario no encontrado' })
+        }
+
+        // Solo el creador puede reactivar
+        if (usuario.creadoPor?.toString() !== req.usuarioBDD._id.toString()) {
+            return res.status(403).json({ msg: 'Solo el creador de este usuario puede activarlo' })
+        }
+
+        // Si es un vacunador, sus barrios asignados deben seguir
+        // perteneciendo a su coordinador de brigada (pudo haber cambiado
+        // mientras el vacunador estaba inactivo). Si ya no coinciden,
+        // se bloquea la activación hasta que se le reasigne un barrio válido.
+        if (usuario.rol === 'vacunador') {
+            const barriosCoordinador = req.usuarioBDD.barriosAsignados.map(b => b.toString())
+            const barriosVacunador   = usuario.barriosAsignados.map(b => b.toString())
+            const tieneBarrioValido  = barriosVacunador.some(b => barriosCoordinador.includes(b))
+
+            if (barriosVacunador.length === 0 || !tieneBarrioValido) {
+                return res.status(409).json({
+                    msg: 'No se puede activar a este vacunador porque su barrio ya no está entre los barrios que administras. ' +
+                         'Primero asígnale un barrio válido.',
+                })
+            }
+        }
+
+        usuario.estado = 'activo'
+        await usuario.save()
+
+        res.status(200).json({ success: true, msg: 'Usuario activado correctamente' })
+
+    } catch (error) {
+        console.error('❌ Error al activar usuario:', error.message)
+        res.status(500).json({ success: false, msg: 'Error interno del servidor', error: error.message })
+    }
+}
