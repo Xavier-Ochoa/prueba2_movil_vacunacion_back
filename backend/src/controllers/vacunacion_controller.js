@@ -1,20 +1,21 @@
 import Vacunacion from '../models/Vacunacion.js'
 import Usuario from '../models/Usuario.js'
-import { eliminarImagenCloudinary } from '../config/cloudinary.js'
+import { eliminarImagenCloudinary, subirImagenBuffer } from '../config/cloudinary.js'
 
-// ── HELPER: ¿puede este usuario corregir este registro? ───────────────────────
-// Devuelve true si:
-//   - Es el vacunador que creó el registro, O
-//   - Es el coordinador de brigada del barrio guardado en el registro
-const puedeCorregirRegistro = (usuarioBDD, vacunacion) => {
-    if (usuarioBDD.rol === 'vacunador') {
-        return vacunacion.vacunador.toString() === usuarioBDD._id.toString()
-    }
-    if (usuarioBDD.rol === 'coordinador_brigada') {
-        const barriosDelCoordinador = (usuarioBDD.barriosAsignados || []).map(b => b.toString())
-        return barriosDelCoordinador.includes(vacunacion.barrio.toString())
-    }
-    return false
+// ── HELPER: solo el vacunador que creó el registro puede editarlo/eliminarlo ──
+const esCreadorVacunacion = (usuarioBDD, vacunacion) => {
+    if (usuarioBDD.rol !== 'vacunador') return false
+    return vacunacion.vacunador.toString() === usuarioBDD._id.toString()
+}
+
+// ── HELPER: obtener IDs de todos los vacunadores bajo un coordinador_campana ──
+const vacunadoresDeCampana = async (campanaId) => {
+    const brigadas = await Usuario.find({ creadoPor: campanaId, rol: 'coordinador_brigada' }).select('_id')
+    const vacunadores = await Usuario.find({
+        creadoPor: { $in: brigadas.map(b => b._id) },
+        rol: 'vacunador',
+    }).select('_id')
+    return vacunadores.map(v => v._id)
 }
 
 // ── CREAR VACUNACIÓN ──────────────────────────────────────────────────────────
@@ -25,25 +26,25 @@ export const crearVacunacion = async (req, res) => {
             mascotaTipo, mascotaNombre, mascotaEdad, mascotaSexo,
             vacuna, observaciones,
             latitud, longitud,
-            clienteId,       // id generado en el dispositivo (Sprint 3 - offline)
-            fechaRegistro,   // fecha real en que se vacunó, capturada en el celular
+            clienteId,
+            fechaRegistro,
         } = req.body
 
-        // La imagen es obligatoria
         if (!req.file) {
             return res.status(400).json({ msg: 'La fotografía de la mascota es obligatoria' })
         }
 
-        // ── Idempotencia: si este registro ya llegó antes (reintento de  ──
-        // ── sincronización tras un corte de red o respuesta perdida),    ──
-        // ── no lo insertamos de nuevo y devolvemos el ya existente.       ──
+        let imagenUpload
+        try {
+            imagenUpload = await subirImagenBuffer(req.file.buffer)
+        } catch (uploadError) {
+            return res.status(500).json({ msg: 'Error al subir la imagen. Intenta de nuevo.' })
+        }
+
         if (clienteId) {
             const existente = await Vacunacion.findOne({ clienteId })
             if (existente) {
-                // Como el registro ya existe, la nueva imagen subida en este
-                // reintento es redundante: la eliminamos para no dejar basura.
-                await eliminarImagenCloudinary(req.file.filename)
-
+                await eliminarImagenCloudinary(imagenUpload.public_id)
                 await existente.populate([
                     { path: 'vacunador', select: 'nombre apellido' },
                     { path: 'barrio',   select: 'nombre sector' },
@@ -57,20 +58,13 @@ export const crearVacunacion = async (req, res) => {
             }
         }
 
-        // El vacunador debe tener barrio asignado
-        const vacunadorDB = await Usuario.findById(req.usuarioBDD._id)
-            .populate('barriosAsignados')
+        const vacunadorDB = await Usuario.findById(req.usuarioBDD._id).populate('barriosAsignados')
 
         if (!vacunadorDB.barriosAsignados || vacunadorDB.barriosAsignados.length === 0) {
             return res.status(400).json({ msg: 'No tienes barrios asignados. Contacta a tu coordinador.' })
         }
 
-        // Tomar el primer barrio asignado (o el que envíe el frontend)
         const barrioId = req.body.barrioId || vacunadorDB.barriosAsignados[0]._id
-
-        // Fecha real de vacunación: la que vino del dispositivo (puede ser
-        // de hace varios días si se registró sin señal). Si no llega,
-        // usamos el momento actual como respaldo.
         const fechaRegistroReal = fechaRegistro ? new Date(fechaRegistro) : new Date()
 
         const nuevaVacunacion = new Vacunacion({
@@ -87,8 +81,8 @@ export const crearVacunacion = async (req, res) => {
             },
             vacuna,
             observaciones,
-            imagenUrl:      req.file.path,
-            imagenPublicId: req.file.filename,
+            imagenUrl:      imagenUpload.secure_url,
+            imagenPublicId: imagenUpload.public_id,
             ubicacion: {
                 latitud:  latitud  ? Number(latitud)  : null,
                 longitud: longitud ? Number(longitud) : null,
@@ -113,15 +107,9 @@ export const crearVacunacion = async (req, res) => {
         })
 
     } catch (error) {
-        // Si la imagen ya se subió pero el registro falla, eliminarla
-        if (req.file?.filename) {
-            await eliminarImagenCloudinary(req.file.filename)
+        if (imagenUpload?.public_id) {
+            await eliminarImagenCloudinary(imagenUpload.public_id)
         }
-
-        // Carrera entre reintentos simultáneos: el índice unique de
-        // clienteId puede rechazar el segundo insert justo después de
-        // que el primero pasó el chequeo de arriba. Lo tratamos igual
-        // que un duplicado en vez de un error 500.
         if (error.code === 11000 && error.keyPattern?.clienteId) {
             const existente = await Vacunacion.findOne({ clienteId: req.body.clienteId })
                 .populate([
@@ -135,7 +123,6 @@ export const crearVacunacion = async (req, res) => {
                 vacunacion: existente,
             })
         }
-
         console.error('❌ Error al crear vacunación:', error.message)
         res.status(500).json({ success: false, msg: 'Error interno del servidor', error: error.message })
     }
@@ -148,26 +135,24 @@ export const listarVacunaciones = async (req, res) => {
         let filtro = {}
 
         if (rol === 'vacunador') {
-            // Solo ve sus propios registros
+            // Solo sus propios registros
             filtro.vacunador = _id
         } else if (rol === 'coordinador_brigada') {
-            // Ve los registros de sus vacunadores
-            const vacunadores = await Usuario.find({ creadoPor: _id }).select('_id')
-            const idsVacunadores = vacunadores.map(v => v._id)
-            filtro.vacunador = { $in: idsVacunadores }
+            // Solo los vacunadores que él creó
+            const vacunadores = await Usuario.find({ creadoPor: _id, rol: 'vacunador' }).select('_id')
+            filtro.vacunador = { $in: vacunadores.map(v => v._id) }
+        } else if (rol === 'coordinador_campana') {
+            // Solo los vacunadores de sus coordinadores de brigada
+            const ids = await vacunadoresDeCampana(_id)
+            filtro.vacunador = { $in: ids }
         }
-        // coordinador_campana → ve todo (filtro vacío)
 
         const vacunaciones = await Vacunacion.find(filtro)
             .populate('vacunador', 'nombre apellido cedula')
             .populate('barrio', 'nombre sector')
             .sort({ fechaRegistro: -1 })
 
-        res.status(200).json({
-            success: true,
-            total: vacunaciones.length,
-            vacunaciones,
-        })
+        res.status(200).json({ success: true, total: vacunaciones.length, vacunaciones })
 
     } catch (error) {
         console.error('❌ Error al listar vacunaciones:', error.message)
@@ -187,10 +172,23 @@ export const obtenerVacunacion = async (req, res) => {
             return res.status(404).json({ msg: 'Vacunación no encontrada' })
         }
 
-        // Verificar acceso
         const { rol, _id } = req.usuarioBDD
-        if (rol === 'vacunador' && vacunacion.vacunador._id.toString() !== _id.toString()) {
-            return res.status(403).json({ msg: 'No tienes permiso para ver este registro' })
+
+        if (rol === 'vacunador') {
+            if (vacunacion.vacunador._id.toString() !== _id.toString()) {
+                return res.status(403).json({ msg: 'No tienes permiso para ver este registro' })
+            }
+        } else if (rol === 'coordinador_brigada') {
+            const vacunadores = await Usuario.find({ creadoPor: _id, rol: 'vacunador' }).select('_id')
+            const ids = vacunadores.map(v => v._id.toString())
+            if (!ids.includes(vacunacion.vacunador._id.toString())) {
+                return res.status(403).json({ msg: 'No tienes permiso para ver este registro' })
+            }
+        } else if (rol === 'coordinador_campana') {
+            const ids = (await vacunadoresDeCampana(_id)).map(v => v.toString())
+            if (!ids.includes(vacunacion.vacunador._id.toString())) {
+                return res.status(403).json({ msg: 'No tienes permiso para ver este registro' })
+            }
         }
 
         res.status(200).json({ success: true, vacunacion })
@@ -201,7 +199,7 @@ export const obtenerVacunacion = async (req, res) => {
     }
 }
 
-// ── EDITAR VACUNACIÓN ─────────────────────────────────────────────────────────
+// ── EDITAR VACUNACIÓN (solo el vacunador que la creó) ─────────────────────────
 export const editarVacunacion = async (req, res) => {
     try {
         const { id } = req.params
@@ -211,11 +209,8 @@ export const editarVacunacion = async (req, res) => {
             return res.status(404).json({ msg: 'Vacunación no encontrada' })
         }
 
-        // Verificar permiso: creador o coordinador del barrio del registro
-        if (!puedeCorregirRegistro(req.usuarioBDD, vacunacion)) {
-            return res.status(403).json({
-                msg: 'No tienes permiso para editar este registro. Debes ser el vacunador que lo creó o el coordinador de brigada del barrio al que pertenece.',
-            })
+        if (!esCreadorVacunacion(req.usuarioBDD, vacunacion)) {
+            return res.status(403).json({ msg: 'Solo el vacunador que registró esta vacunación puede editarla.' })
         }
 
         const {
@@ -224,29 +219,23 @@ export const editarVacunacion = async (req, res) => {
             vacuna, observaciones, latitud, longitud,
         } = req.body
 
-        // Actualizar campos del propietario
         if (propietarioNombre)   vacunacion.propietario.nombre   = propietarioNombre
         if (propietarioCedula)   vacunacion.propietario.cedula   = propietarioCedula
         if (propietarioTelefono) vacunacion.propietario.telefono = propietarioTelefono
-
-        // Actualizar campos de la mascota
-        if (mascotaTipo)   vacunacion.mascota.tipo   = mascotaTipo
-        if (mascotaNombre) vacunacion.mascota.nombre = mascotaNombre
-        if (mascotaEdad)   vacunacion.mascota.edad   = Number(mascotaEdad)
-        if (mascotaSexo)   vacunacion.mascota.sexo   = mascotaSexo
-
-        if (vacuna)        vacunacion.vacuna        = vacuna
+        if (mascotaTipo)         vacunacion.mascota.tipo         = mascotaTipo
+        if (mascotaNombre)       vacunacion.mascota.nombre       = mascotaNombre
+        if (mascotaEdad)         vacunacion.mascota.edad         = Number(mascotaEdad)
+        if (mascotaSexo)         vacunacion.mascota.sexo         = mascotaSexo
+        if (vacuna)              vacunacion.vacuna               = vacuna
         if (observaciones !== undefined) vacunacion.observaciones = observaciones
-
-        // Actualizar GPS si se envía
         if (latitud  !== undefined) vacunacion.ubicacion.latitud  = Number(latitud)
         if (longitud !== undefined) vacunacion.ubicacion.longitud = Number(longitud)
 
-        // Actualizar imagen si se envía una nueva
         if (req.file) {
+            const nuevaImagen = await subirImagenBuffer(req.file.buffer)
             await eliminarImagenCloudinary(vacunacion.imagenPublicId)
-            vacunacion.imagenUrl      = req.file.path
-            vacunacion.imagenPublicId = req.file.filename
+            vacunacion.imagenUrl      = nuevaImagen.secure_url
+            vacunacion.imagenPublicId = nuevaImagen.public_id
         }
 
         await vacunacion.save()
@@ -255,48 +244,29 @@ export const editarVacunacion = async (req, res) => {
             { path: 'barrio',   select: 'nombre sector' },
         ])
 
-        res.status(200).json({
-            success: true,
-            msg: 'Vacunación actualizada correctamente',
-            vacunacion,
-        })
+        res.status(200).json({ success: true, msg: 'Vacunación actualizada correctamente', vacunacion })
 
     } catch (error) {
-        if (req.file?.filename) {
-            await eliminarImagenCloudinary(req.file.filename)
-        }
         console.error('❌ Error al editar vacunación:', error.message)
         res.status(500).json({ success: false, msg: 'Error interno del servidor', error: error.message })
     }
 }
 
-// ── ELIMINAR VACUNACIÓN ───────────────────────────────────────────────────────
+// ── ELIMINAR VACUNACIÓN (solo el vacunador que la creó) ───────────────────────
 export const eliminarVacunacion = async (req, res) => {
     try {
         const { id } = req.params
         const vacunacion = await Vacunacion.findById(id)
 
         if (!vacunacion) {
-            // Idempotencia: si la app reintenta un DELETE que ya se
-            // procesó antes (p. ej. perdió la respuesta por un corte de
-            // señal), el resultado deseado ("que no exista") ya se cumple.
-            return res.status(200).json({
-                success: true,
-                msg: 'La vacunación ya había sido eliminada',
-                yaEliminado: true,
-            })
+            return res.status(200).json({ success: true, msg: 'La vacunación ya había sido eliminada', yaEliminado: true })
         }
 
-        // Verificar permiso: creador o coordinador del barrio del registro
-        if (!puedeCorregirRegistro(req.usuarioBDD, vacunacion)) {
-            return res.status(403).json({
-                msg: 'No tienes permiso para eliminar este registro. Debes ser el vacunador que lo creó o el coordinador de brigada del barrio al que pertenece.',
-            })
+        if (!esCreadorVacunacion(req.usuarioBDD, vacunacion)) {
+            return res.status(403).json({ msg: 'Solo el vacunador que registró esta vacunación puede eliminarla.' })
         }
 
-        // Eliminar imagen de Cloudinary
         await eliminarImagenCloudinary(vacunacion.imagenPublicId)
-
         await Vacunacion.findByIdAndDelete(id)
 
         res.status(200).json({ success: true, msg: 'Vacunación eliminada correctamente' })
@@ -316,64 +286,38 @@ export const obtenerEstadisticas = async (req, res) => {
         if (rol === 'vacunador') {
             matchStage = { vacunador: _id }
         } else if (rol === 'coordinador_brigada') {
-            const vacunadores = await Usuario.find({ creadoPor: _id }).select('_id')
+            const vacunadores = await Usuario.find({ creadoPor: _id, rol: 'vacunador' }).select('_id')
             matchStage = { vacunador: { $in: vacunadores.map(v => v._id) } }
+        } else if (rol === 'coordinador_campana') {
+            const ids = await vacunadoresDeCampana(_id)
+            matchStage = { vacunador: { $in: ids } }
         }
-        // coordinador_campana → ve todo (matchStage vacío)
 
         const [totalResult, porTipo, porBarrio, porVacunador] = await Promise.all([
-            // Total vacunaciones
             Vacunacion.countDocuments(matchStage),
-
-            // Por tipo de mascota
             Vacunacion.aggregate([
                 { $match: matchStage },
                 { $group: { _id: '$mascota.tipo', total: { $sum: 1 } } },
             ]),
-
-            // Por barrio
             Vacunacion.aggregate([
                 { $match: matchStage },
-                {
-                    $lookup: {
-                        from: 'barrios',
-                        localField: 'barrio',
-                        foreignField: '_id',
-                        as: 'barrioInfo',
-                    },
-                },
+                { $lookup: { from: 'barrios', localField: 'barrio', foreignField: '_id', as: 'barrioInfo' } },
                 { $unwind: '$barrioInfo' },
-                {
-                    $group: {
-                        _id:    '$barrioInfo.nombre',
-                        sector: { $first: '$barrioInfo.sector' },
-                        total:  { $sum: 1 },
-                    },
-                },
+                { $group: { _id: '$barrioInfo.nombre', sector: { $first: '$barrioInfo.sector' }, total: { $sum: 1 } } },
                 { $sort: { total: -1 } },
             ]),
-
-            // Por vacunador (relevante para coordinadores; un vacunador
-            // viendo su propio dashboard solo se verá a sí mismo)
             Vacunacion.aggregate([
                 { $match: matchStage },
-                {
-                    $lookup: {
-                        from: 'usuarios',
-                        localField: 'vacunador',
-                        foreignField: '_id',
-                        as: 'vacunadorInfo',
-                    },
-                },
+                { $lookup: { from: 'usuarios', localField: 'vacunador', foreignField: '_id', as: 'vacunadorInfo' } },
                 { $unwind: '$vacunadorInfo' },
                 {
                     $group: {
-                        _id:     '$vacunadorInfo._id',
-                        nombre:  { $first: '$vacunadorInfo.nombre' },
-                        apellido:{ $first: '$vacunadorInfo.apellido' },
-                        total:   { $sum: 1 },
-                        perros:  { $sum: { $cond: [{ $eq: ['$mascota.tipo', 'perro'] }, 1, 0] } },
-                        gatos:   { $sum: { $cond: [{ $eq: ['$mascota.tipo', 'gato'] }, 1, 0] } },
+                        _id:      '$vacunadorInfo._id',
+                        nombre:   { $first: '$vacunadorInfo.nombre' },
+                        apellido: { $first: '$vacunadorInfo.apellido' },
+                        total:    { $sum: 1 },
+                        perros:   { $sum: { $cond: [{ $eq: ['$mascota.tipo', 'perro'] }, 1, 0] } },
+                        gatos:    { $sum: { $cond: [{ $eq: ['$mascota.tipo', 'gato'] }, 1, 0] } },
                     },
                 },
                 { $sort: { total: -1 } },
@@ -385,13 +329,7 @@ export const obtenerEstadisticas = async (req, res) => {
 
         res.status(200).json({
             success: true,
-            estadisticas: {
-                total: totalResult,
-                perros,
-                gatos,
-                porBarrio,
-                porVacunador,
-            },
+            estadisticas: { total: totalResult, perros, gatos, porBarrio, porVacunador },
         })
 
     } catch (error) {
