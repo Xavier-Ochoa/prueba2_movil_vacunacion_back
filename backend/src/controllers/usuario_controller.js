@@ -271,8 +271,16 @@ export const reasignarBarrioVacunador = async (req, res) => {
             return res.status(403).json({ msg: 'No tienes permiso para reasignar este vacunador' })
         }
 
-        // El nuevo barrio debe estar dentro de los barrios que administra el coordinador
+        // La reasignación solo tiene sentido si el coordinador administra
+        // 2 o más barrios (con 1 solo barrio no hay a dónde reasignar).
         const barriosDelCoordinador = req.usuarioBDD.barriosAsignados.map(b => b.toString())
+        if (barriosDelCoordinador.length < 2) {
+            return res.status(400).json({
+                msg: 'Necesitas tener 2 o más barrios asignados para poder reasignar vacunadores.',
+            })
+        }
+
+        // El nuevo barrio debe estar dentro de los barrios que administra el coordinador
         if (!barriosDelCoordinador.includes(barrioId.toString())) {
             return res.status(403).json({ msg: 'Solo puedes asignar vacunadores a barrios que administras.' })
         }
