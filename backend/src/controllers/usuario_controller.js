@@ -306,7 +306,7 @@ export const reasignarBarrioVacunador = async (req, res) => {
     }
 }
 
-// ── ACTUALIZAR BARRIOS DE UN COORDINADOR DE BRIGADA (solo coordinador_campana) ─
+// ── ACTUALIZAR BARRIOS DE UN COORDINADOR DE BRIGADA (solo coordinador_campana que lo creó) ─
 export const actualizarBarriosCoordinador = async (req, res) => {
     try {
         const { id } = req.params
@@ -325,12 +325,45 @@ export const actualizarBarriosCoordinador = async (req, res) => {
             return res.status(400).json({ msg: 'Solo se pueden editar barrios de un coordinador de brigada' })
         }
 
-        // Limpiar coordinadorAsignado en barrios que se quitan
+        // Solo el coordinador de campaña que creó a este coordinador de
+        // brigada puede modificar sus barrios.
+        if (usuario.creadoPor?.toString() !== req.usuarioBDD._id.toString()) {
+            return res.status(403).json({ msg: 'Solo el coordinador de campaña que creó a este coordinador de brigada puede modificar sus barrios' })
+        }
+
         const barriosAnteriores = usuario.barriosAsignados.map(b => b.toString())
         const barriosNuevos     = barriosIds.map(b => b.toString())
         const barriosQuitados   = barriosAnteriores.filter(b => !barriosNuevos.includes(b))
         const barriosAgregados  = barriosNuevos.filter(b => !barriosAnteriores.includes(b))
 
+        // No se puede quitar un barrio si el coordinador tiene vacunadores
+        // ACTIVOS trabajando en ese barrio: primero hay que reasignarlos o
+        // desactivarlos, para no dejar vacunadores con un barrio al que su
+        // coordinador ya no tiene acceso.
+        if (barriosQuitados.length > 0) {
+            const vacunadoresAfectados = await Usuario.find({
+                creadoPor:        id,
+                rol:              'vacunador',
+                estado:           'activo',
+                barriosAsignados: { $in: barriosQuitados },
+            }).select('+estado nombre apellido barriosAsignados').populate('barriosAsignados', 'nombre sector')
+
+            if (vacunadoresAfectados.length > 0) {
+                const detalle = vacunadoresAfectados.map(v => ({
+                    _id:     v._id,
+                    nombre:  `${v.nombre} ${v.apellido}`,
+                    barrios: v.barriosAsignados.map(b => `${b.nombre} (${b.sector})`),
+                }))
+
+                return res.status(409).json({
+                    msg: 'No se pueden quitar barrios que tienen vacunadores activos asignados. ' +
+                         'Reasigna o desactiva primero a esos vacunadores.',
+                    vacunadoresAfectados: detalle,
+                })
+            }
+        }
+
+        // Limpiar coordinadorAsignado en barrios que se quitan
         if (barriosQuitados.length > 0) {
             await Barrio.updateMany(
                 { _id: { $in: barriosQuitados }, coordinadorAsignado: id },
