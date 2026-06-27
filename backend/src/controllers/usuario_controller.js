@@ -165,7 +165,7 @@ export const crearVacunador = async (req, res) => {
 export const listarMisUsuarios = async (req, res) => {
     try {
         const usuarios = await Usuario.find({ creadoPor: req.usuarioBDD._id })
-            .select('-password')
+            .select('-password +estado')
             .populate('barriosAsignados', 'nombre sector')
             .lean()
 
@@ -183,7 +183,7 @@ export const obtenerUsuario = async (req, res) => {
         const { id } = req.params
 
         const usuario = await Usuario.findById(id)
-            .select('-password')
+            .select('-password +estado')
             .populate('barriosAsignados', 'nombre sector')
             .populate('creadoPor', 'nombre apellido rol')
             .lean()
@@ -290,7 +290,7 @@ export const reasignarBarrioVacunador = async (req, res) => {
         await usuario.save()
 
         const usuarioActualizado = await Usuario.findById(id)
-            .select('-password')
+            .select('-password +estado')
             .populate('barriosAsignados', 'nombre sector')
             .lean()
 
@@ -382,7 +382,7 @@ export const actualizarBarriosCoordinador = async (req, res) => {
         await usuario.save()
 
         const actualizado = await Usuario.findById(id)
-            .select('-password')
+            .select('-password +estado')
             .populate('barriosAsignados', 'nombre sector')
             .lean()
 
