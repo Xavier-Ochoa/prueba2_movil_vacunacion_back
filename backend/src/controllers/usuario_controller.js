@@ -200,7 +200,7 @@ export const obtenerUsuario = async (req, res) => {
     }
 }
 
-// ── EDITAR USUARIO (nombre, apellido, teléfono) ───────────────────────────────
+// ── EDITAR USUARIO (solo el propio usuario puede editar su perfil) ────────────
 export const editarUsuario = async (req, res) => {
     try {
         const { id } = req.params
@@ -211,15 +211,11 @@ export const editarUsuario = async (req, res) => {
             return res.status(404).json({ msg: 'Usuario no encontrado' })
         }
 
-        // Solo el creador o el coordinador_campana puede editar
-        const esCreador = usuario.creadoPor?.toString() === req.usuarioBDD._id.toString()
-        const esCampana = req.usuarioBDD.rol === 'coordinador_campana'
-
-        if (!esCreador && !esCampana) {
-            return res.status(403).json({ msg: 'No tienes permiso para editar este usuario' })
+        // Solo el propio usuario puede editar su perfil
+        if (id.toString() !== req.usuarioBDD._id.toString()) {
+            return res.status(403).json({ msg: 'Solo puedes editar tu propio perfil' })
         }
 
-        // Actualizar solo los campos permitidos que vengan en el body
         if (nombre)   usuario.nombre   = nombre.trim()
         if (apellido) usuario.apellido = apellido.trim()
         if (telefono) usuario.telefono = telefono.trim()
@@ -228,7 +224,7 @@ export const editarUsuario = async (req, res) => {
 
         res.status(200).json({
             success: true,
-            msg: 'Usuario actualizado correctamente',
+            msg: 'Perfil actualizado correctamente',
             data: {
                 _id:      usuario._id,
                 nombre:   usuario.nombre,
@@ -371,12 +367,9 @@ export const desactivarUsuario = async (req, res) => {
             return res.status(404).json({ msg: 'Usuario no encontrado' })
         }
 
-        // Solo el creador o el coordinador_campana puede desactivar
-        const esCreador = usuario.creadoPor?.toString() === req.usuarioBDD._id.toString()
-        const esCampana = req.usuarioBDD.rol === 'coordinador_campana'
-
-        if (!esCreador && !esCampana) {
-            return res.status(403).json({ msg: 'No tienes permiso para desactivar este usuario' })
+        // Solo el creador puede desactivar
+        if (usuario.creadoPor?.toString() !== req.usuarioBDD._id.toString()) {
+            return res.status(403).json({ msg: 'Solo el creador de este usuario puede desactivarlo' })
         }
 
         usuario.estado = 'inactivo'
