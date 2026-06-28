@@ -188,10 +188,21 @@ export const cambiarPassword = async (req, res) => {
 }
 
 // ── PERFIL DEL USUARIO AUTENTICADO ───────────────────────────────────────────
-export const perfil = (req, res) => {
+export const perfil = async (req, res) => {
     try {
-        const { password, token, tokenExpira, estado, passwordCambiada, __v, ...datos } = req.usuarioBDD
-        res.status(200).json(datos)
+        // Populatear barriosAsignados para que el cliente reciba
+        // nombre y sector, no solo IDs. Necesario para mostrar
+        // los barrios en la pantalla de perfil.
+        const usuario = await Usuario.findById(req.usuarioBDD._id)
+            .populate('barriosAsignados', 'nombre sector')
+            .select('-password -token -tokenExpira -passwordCambiada -__v')
+            .lean()
+
+        if (!usuario) {
+            return res.status(404).json({ msg: 'Usuario no encontrado' })
+        }
+
+        res.status(200).json(usuario)
     } catch (error) {
         res.status(500).json({ success: false, msg: 'Error interno del servidor', error: error.message })
     }
