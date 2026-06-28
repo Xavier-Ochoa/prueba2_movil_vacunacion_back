@@ -122,6 +122,16 @@ const usuarioSchema = new Schema(
 )
 
 // ─────────────────────────────────────────────
+// MIDDLEWARE: validar que el vacunador no tenga más de un barrio
+// ─────────────────────────────────────────────
+usuarioSchema.pre('save', function (next) {
+    if (this.rol === 'vacunador' && this.barriosAsignados.length > 1) {
+        return next(new Error('Un vacunador solo puede tener un barrio asignado.'))
+    }
+    next()
+})
+
+// ─────────────────────────────────────────────
 // MÉTODOS
 // ─────────────────────────────────────────────
 
