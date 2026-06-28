@@ -80,6 +80,31 @@ export const actualizarBarrio = async (req, res) => {
             return res.status(404).json({ msg: 'Barrio no encontrado' })
         }
 
+        // Si se está pasando el barrio a 'inactivo', aplicamos el mismo
+        // criterio que al eliminar: no se puede dejar inactivo un barrio
+        // que todavía tiene vacunadores ACTIVOS trabajando en él, porque
+        // quedarían operando en un barrio que ya no está disponible.
+        const seVaAInactivar = estado === 'inactivo' && barrio.estado !== 'inactivo'
+
+        if (seVaAInactivar) {
+            const vacunadoresAfectados = await Usuario.find({
+                rol:              'vacunador',
+                estado:           'activo',
+                barriosAsignados: barrio._id,
+            }).select('+estado nombre apellido')
+
+            if (vacunadoresAfectados.length > 0) {
+                return res.status(409).json({
+                    msg: 'No se puede inactivar este barrio porque tiene vacunadores activos asignados. ' +
+                         'Reasigna o desactiva primero a esos vacunadores.',
+                    vacunadoresAfectados: vacunadoresAfectados.map(v => ({
+                        _id:    v._id,
+                        nombre: `${v.nombre} ${v.apellido}`,
+                    })),
+                })
+            }
+        }
+
         if (nombre) barrio.nombre = nombre.trim()
         if (sector) barrio.sector = sector
         if (estado) barrio.estado = estado
