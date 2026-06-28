@@ -190,7 +190,7 @@ Desliza hacia abajo en cualquier momento para refrescar los datos.
 
 ---
 
-## Apartado técnico: conexión con el backend
+## Apartado técnico: conexión con el backend - https://prueba2-movil-vacunacion-back.vercel.app/
 
 La app no incluye un backend propio — se conecta a una API REST (Node.js + Express + MongoDB) mediante HTTP. Esta sección es un resumen rápido pensado para quien necesite levantar o apuntar a un backend propio; el detalle completo de endpoints, modelos y variables de entorno está en el README del proyecto de backend.
 
