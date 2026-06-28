@@ -8,6 +8,13 @@ Este documento es, sobre todo, una **guía de uso**: qué puede hacer cada rol y
 
 ---
 
+## 🎥 Video demostrativo de la App
+
+En el siguiente video se muestra el funcionamiento de la aplicación, incluyendo el registro de vacunaciones, uso de cámara, GPS y sincronización de datos.
+
+https://youtu.be/9IS0w6ixsB8
+
+👉 **[▶️ VER VIDEO DEMOSTRATIVO](https://youtu.be/9IS0w6ixsB8)** 👈
 
 ## 📦 APK de la App
 
