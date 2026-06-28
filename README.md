@@ -23,6 +23,18 @@ Puede descargarse desde el siguiente enlace:
 
 https://drive.google.com/drive/folders/1UC40AyJa6rrExfJiZTT1K4NlXa8tXLn2?usp=sharing
 
+## 🔐 Credenciales de prueba
+
+### 👤 Coordinador de campaña
+
+Utilice las siguientes credenciales para ingresar al sistema con el rol de **Coordinador de campaña** y probar todas las funcionalidades administrativas:
+
+- 📧 **Correo:** `coordinador@vacunacion.gob.ec`  
+- 🔑 **Contraseña:** `Admin1234!`
+
+> ⚠️ **Nota:** Estas credenciales son únicamente para fines de demostración y pruebas académicas.
+
+
 
 ## Índice
 
