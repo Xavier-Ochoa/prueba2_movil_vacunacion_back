@@ -78,7 +78,15 @@ export const crearVacunacion = async (req, res) => {
             return res.status(400).json({ msg: 'No tienes barrios asignados. Contacta a tu coordinador.' })
         }
 
-        const barrioId = req.body.barrioId || vacunadorDB.barriosAsignados[0]._id
+        // El barrioId que mande el cliente solo se respeta si realmente
+        // pertenece a los barrios asignados del vacunador. Si no, o si no
+        // se mandó ninguno, se usa su barrio por defecto. Esto evita que
+        // alguien con el token de un vacunador fuerce un barrioId ajeno
+        // (p. ej. llamando directo a la API).
+        const barriosVacunadorIds = vacunadorDB.barriosAsignados.map(b => b._id.toString())
+        const barrioId = (req.body.barrioId && barriosVacunadorIds.includes(req.body.barrioId))
+            ? req.body.barrioId
+            : vacunadorDB.barriosAsignados[0]._id
         const fechaRegistroReal = fechaRegistro ? new Date(fechaRegistro) : new Date()
 
         const nuevaVacunacion = new Vacunacion({
