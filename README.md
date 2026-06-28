@@ -11,10 +11,10 @@ Este documento es, sobre todo, una **guía de uso**: qué puede hacer cada rol y
 
 ## 📦 APK de la App
 
-La aplicación móvil se encuentra disponible en formato APK.
+La aplicación móvil se encuentra disponible en formato APK.  
 Puede descargarse desde el siguiente enlace:
 
-:contentReference[oaicite:0]{index=0}
+https://drive.google.com/drive/folders/1UC40AyJa6rrExfJiZTT1K4NlXa8tXLn2?usp=sharing
 
 
 ## Índice
