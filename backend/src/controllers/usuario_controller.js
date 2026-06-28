@@ -86,6 +86,11 @@ export const crearVacunador = async (req, res) => {
     try {
         const { nombre, apellido, cedula, email, telefono, barrioId } = req.body
 
+        // Validar que solo se envíe UN barrioId (no un array)
+        if (Array.isArray(barrioId)) {
+            return res.status(400).json({ msg: 'Un vacunador solo puede tener un barrio asignado.' })
+        }
+
         // Validar campos obligatorios
         const faltantes = []
         if (!nombre)    faltantes.push('nombre')
