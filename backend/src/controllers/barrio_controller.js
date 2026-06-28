@@ -106,6 +106,25 @@ export const eliminarBarrio = async (req, res) => {
             return res.status(404).json({ msg: 'Barrio no encontrado' })
         }
 
+        // No se puede eliminar un barrio si tiene vacunadores ACTIVOS
+        // asignados (los dejaría con una referencia a un barrio inexistente).
+        const vacunadoresAfectados = await Usuario.find({
+            rol:              'vacunador',
+            estado:           'activo',
+            barriosAsignados: barrio._id,
+        }).select('+estado nombre apellido')
+
+        if (vacunadoresAfectados.length > 0) {
+            return res.status(409).json({
+                msg: 'No se puede eliminar este barrio porque tiene vacunadores activos asignados. ' +
+                     'Reasigna o desactiva primero a esos vacunadores.',
+                vacunadoresAfectados: vacunadoresAfectados.map(v => ({
+                    _id:    v._id,
+                    nombre: `${v.nombre} ${v.apellido}`,
+                })),
+            })
+        }
+
         // Si tiene coordinador asignado, limpiar la referencia en el usuario
         if (barrio.coordinadorAsignado) {
             await Usuario.findByIdAndUpdate(barrio.coordinadorAsignado, {
