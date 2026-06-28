@@ -8,6 +8,15 @@ Este documento es, sobre todo, una **guía de uso**: qué puede hacer cada rol y
 
 ---
 
+
+## 📦 APK de la App
+
+La aplicación móvil se encuentra disponible en formato APK.
+Puede descargarse desde el siguiente enlace:
+
+:contentReference[oaicite:0]{index=0}
+
+
 ## Índice
 
 1. [Instalación rápida](#instalación-rápida)
